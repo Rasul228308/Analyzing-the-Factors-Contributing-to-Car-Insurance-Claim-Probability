@@ -704,7 +704,7 @@ Threshold    Precision    Recall    F1       Business Profit
 3. **Feature Selection**
    - **Current**: Used all 18 features
    - **Optimization**: Permutation importance shows 5 features account for 80% impact
-   - **Future**: Try L1 regularization or recursive feature elimination
+   - **Future**: Try more aggressive L1 regularization or recursive feature elimination
 
 4. **Ensemble Methods**
    - **Current**: Single XGBoost model
