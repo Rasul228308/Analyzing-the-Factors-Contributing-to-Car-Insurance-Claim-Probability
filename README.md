@@ -239,7 +239,7 @@ threshold: 0.5490  # ← Critical for F1 optimization
 **Performance**:
 ```
 Best F1 Score: 0.7754
-Overfitting Gap: 0.1788 (⚠️ Moderate - acceptable)
+Overfitting Gap: 0.0072
 ```
 
 ---
