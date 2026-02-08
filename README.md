@@ -778,10 +778,10 @@ for feature_pair in top_interactions:
 
 ### 3. Temporal Validation
 
-**Problem**: Our train/test split is random (ignores time)
+**Problem**: Our train/test split is random (ignores time, as we don't have it in the original dataset)
 **Risk**: Data leakage if future policies differ from past
 
-**Solution**: Time-series cross-validation
+**Solution**: Time-series cross-validation (using other time-stamped data sources)
 ```python
 # Train on 2019-2020 → Test on 2021
 # Train on 2019-2021 → Test on 2022
@@ -941,10 +941,10 @@ diagnostics = plot_xgboost_diagnostics(model, X_train, y_train, X_test, y_test)
 
 ---
 
-## 👤 Author
+## 👤 Author - Me :D
 
 **Data Scientist | ML Engineer**  
-*Specialization*: Insurance Analytics, Risk Modeling, Explainable AI
+*Specialization*: Hyperparameter Optimization and TUning
 
 ---
 
@@ -956,11 +956,11 @@ This project is for educational and portfolio purposes.
 
 ## 🙏 Acknowledgments
 
-- **Dataset**: Kaggle Car Insurance Dataset
+- **Dataset**: Kaggle Car Insurance Dataset (https://www.kaggle.com/datasets/sagnik1511/car-insurance-data/data)
 - **Inspiration**: Actuarial science literature on claim prediction
 - **Tools**: Open-source ML community (scikit-learn, XGBoost, SHAP)
 
 ---
 
 **Last Updated**: February 2026  
-**Status**: Production-Ready Model ✅
+**Status**: Production-Ready Model
