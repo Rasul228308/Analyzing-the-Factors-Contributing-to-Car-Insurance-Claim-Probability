@@ -510,7 +510,7 @@ Effect: 4 percentage point reduction (weak)
 Effect: ~1 percentage point (negligible)
 ```
 
-**🚨 Data Quality Issue**: Past accidents should be THE #1 predictor per actuarial science, but our model shows minimal effect. **Possible explanations**:
+**🚨 Data Quality Issue Possible**: Past accidents should be THE #1 predictor per actuarial science, but our model shows minimal effect. **Possible explanations**:
 - Underreporting (self-reported data)
 - Multicollinearity (accidents correlate with speeding violations)
 - Regression to mean (unlucky drivers don't stay unlucky)
@@ -1200,11 +1200,11 @@ explainer, shap_values = analyze_shap_values(production_model, X_train, X_test, 
 
 ---
 
-## 👤 Author
+## 👤 Author - Me :D
 
 **Solo Founder | ML Engineer | Data Scientist**
 
-*Specialization*: Insurance Analytics, Explainable AI, Business Intelligence
+*Specialization*: Hyperparameter Tuning, Explainable and Game AI, Business Intelligence
 
 **Project Timeline**: 3 days (including deliberations and refactoring)
 
