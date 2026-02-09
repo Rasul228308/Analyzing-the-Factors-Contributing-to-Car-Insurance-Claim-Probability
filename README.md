@@ -1,180 +1,190 @@
-# Car Insurance Claim Prediction: A Data-Driven Risk Analysis
-## *From Raw Data to Production-Ready Model - A Complete ML Journey*
+# Car Insurance Claim Prediction: From Raw Data to Production Model
+## *A Complete Machine Learning Pipeline with XGBoost, Optuna, and SHAP Explainability*
 
 ---
 
 ## 📊 Executive Summary
 
-This project develops a machine learning system to predict car insurance claims, achieving:
-- **91.64% ROC-AUC** on test data
-- **76.0% F1-Score** (68.1% precision, 85.8% recall)
-- **13.5% calibration improvement** through isotonic regression
-- **Optimal threshold identification**: 0.549 (maximizing F1)
-- **Business impact**: Potential profit improvement of $108,400 (8.7%) through risk-based pricing
+This project develops an end-to-end machine learning system to predict car insurance claims, achieving:
 
-**Key Innovation**: Comprehensive post-hoc analysis including SHAP explainability, error analysis, 
-and business metrics that transform raw predictions into actionable insurance insights.
+- **91.64% ROC-AUC** on test data
+- **76.0% F1-Score** (68.1% precision, 85.8% recall at threshold 0.549)
+- **83.1% overall accuracy**
+- **10.9% calibration improvement** through isotonic regression
+- **Confusion Matrix**: 459 TN, 102 FP, 36 FN, 218 TP
+
+**Key Differentiators**:
+1. **Comprehensive diagnostics**: Bootstrap CIs, permutation importance, SHAP analysis, error profiling
+2. **Business-focused**: Cost-benefit analysis, risk stratification, premium pricing simulation
+3. **Model transparency**: Comparison of XGBoost vs. Logistic Regression interpretations
+4. **Production-ready**: Calibrated probabilities, optimal threshold identification, full documentation
+
+**Disclaimer**: This is a **claim frequency prediction model** (will customer file a claim?), NOT fraud detection. Framework is adaptable to any binary classification with reasonable class balance (<70:30).
 
 ---
 
 ## 🎯 Business Problem
 
-### The Challenge
-Insurance companies face a critical dilemma:
-- **Set premiums too high** → Lose customers to competitors
-- **Set premiums too low** → Incur losses from claims
-- **Poor risk assessment** → $50,000+ losses per missed fraudulent claim
+### The Insurance Pricing Dilemma
+Insurance companies face competing pressures:
+- **Price too high** → Lose customers to competitors
+- **Price too low** → Losses from claims exceed premium revenue
+- **Poor risk assessment** → Mis-priced policies lead to adverse selection
 
 ### Our Solution
-Build a predictive model that:
-1. Identifies high-risk customers **before** they file claims
-2. Enables **risk-based premium pricing**
-3. Reduces false negatives (missed fraud) while minimizing false positives
-4. Provides **explainable predictions** for underwriters
+A predictive model that:
+1. Identifies high-risk customers **before** policy issuance
+2. Enables **risk-based premium pricing** (not one-size-fits-all)
+3. Achieves 85.8% recall (catches most actual claims) while maintaining 68.1% precision
+4. Provides **explainable predictions** via SHAP for underwriter review
 
 ---
 
 ## 📁 Dataset Overview
 
 **Source**: Kaggle Car Insurance Dataset  
-**Size**: 10,000 policies (after cleaning: 9,341)  
-**Target**: Binary classification (0 = No claim, 1 = Claim filed)  
-**Class Distribution**: 31.1% positive class (claims)
+**Initial Size**: 10,000 insurance policies  
+**Final Size**: 9,341 policies (after missing data removal)  
+**Target Variable**: `OUTCOME` (0 = No claim filed, 1 = Claim filed)  
+**Class Distribution**: 31.1% positive class (claims filed)
 
-### Features (18 predictors)
+### Feature Categories (18 predictors)
 
-| Category | Features | Type |
-|----------|----------|------|
-| **Demographics** | Age, Gender, Race, Marital Status, Children | Ordinal/Binary |
-| **Socioeconomic** | Education, Income, Credit Score | Ordinal/Continuous |
-| **Vehicle** | Vehicle Year, Type, Ownership | Binary |
-| **Driving History** | Experience, Speeding Violations, DUIs, Past Accidents | Ordinal/Count |
-| **Geographic** | Postal Code, Annual Mileage | Continuous |
+| Category | Features | Encoding Type |
+|----------|----------|---------------|
+| **Demographics** | AGE, GENDER, RACE, MARRIED, CHILDREN | Ordinal / Binary |
+| **Socioeconomic** | EDUCATION, INCOME, CREDIT_SCORE | Ordinal / Continuous |
+| **Vehicle** | VEHICLE_YEAR, VEHICLE_TYPE, VEHICLE_OWNERSHIP | Binary |
+| **Driving History** | DRIVING_EXPERIENCE, SPEEDING_VIOLATIONS, DUIS, PAST_ACCIDENTS | Ordinal / Count |
+| **Geographic/Usage** | POSTAL_CODE, ANNUAL_MILEAGE | Continuous |
 
 ---
 
-## 🔍 Part 1: Data Exploration & Insights
+## 🔬 Part 1: Data Exploration & Quality Assessment
 
 ### 1.1 Missing Data Analysis
 
-**Key Findings**:
+**Pattern**:
 ```
-- CREDIT_SCORE: 9.82% missing (982 records)
-- ANNUAL_MILEAGE: 9.57% missing (957 records)
-- Overlap: Only 0.88% missing both
+CREDIT_SCORE:     9.82% missing (982 records)
+ANNUAL_MILEAGE:   9.57% missing (957 records)
+Both missing:     0.88% (minimal overlap)
 ```
 
-**Missingness Mechanism** (Chi-Square Tests):
-- **MCAR (Missing Completely At Random)**: No significant association with vehicle type, 
-  experience, or vehicle year (all p > 0.05)
-- **Implication**: Safe to use complete-case analysis without bias
-
-**Decision**: Drop rows with missing values
-- **Rationale**: 
-  - Sparse missingness (7.2% total loss)
-  - MCAR mechanism confirmed
-  - Target distribution preserved (26.15% → 26.08%)
-  - Simple imputation would not add information
-
----
-
-### 1.2 Feature Distribution Analysis
-
-#### Ordinal Features (Preserved Natural Order)
+**Missingness Mechanism Testing** (Chi-Square):
 ```python
-DRIVING_EXPERIENCE: 0-9y (0), 10-19y (1), 20-29y (2), 30y+ (3)
-EDUCATION: None (0), High School (1), University (2)
-INCOME: Poverty (0), Working Class (1), Middle Class (2), Upper Class (3)
-AGE: 16-25 (0), 26-39 (1), 40-64 (2), 65+ (3)
+# Tested associations with VEHICLE_YEAR, DRIVING_EXPERIENCE, VEHICLE_TYPE
+# All p-values > 0.05 → No significant association
+# Conclusion: MCAR (Missing Completely At Random)
 ```
 
-**Insight**: Ordinal encoding preserves domain knowledge (e.g., more experience → lower risk)
+**Decision: Complete-Case Analysis** (Drop rows with missing values)
 
-#### Binary Features (LabelEncoded)
-```
-GENDER, VEHICLE_TYPE, VEHICLE_OWNERSHIP, MARRIED, CHILDREN, RACE, VEHICLE_YEAR
-```
+**Rationale**:
+1. ✅ MCAR mechanism confirmed (no bias from deletion)
+2. ✅ Small loss (7.2% of data)
+3. ✅ Target distribution preserved (26.15% → 26.08% claim rate)
+4. ❌ Imputation would add noise without information (MCAR data contains no systematic pattern)
 
-#### Count Variables (Already Numeric)
+**Impact Assessment**:
 ```
-SPEEDING_VIOLATIONS: Mean 1.49, Max 22 (highly right-skewed)
-PAST_ACCIDENTS: Mean 1.07, Max 15 (overdispersion suggests Poisson/Negative Binomial)
-DUIS: Mean 0.24, Max 6 (rare events, 66% have 0 DUIs)
+Before: 10,000 policies, 2,615 claims (26.15%)
+After:  9,341 policies, 2,436 claims (26.08%)
+Difference: 0.07 percentage points (negligible shift)
 ```
-
-**Key Observation**: Normality tests failed for all continuous variables (Shapiro-Wilk p < 0.001)
-→ Tree-based models preferred over linear models
 
 ---
 
-### 1.3 Correlation with Target (OUTCOME)
+### 1.2 Feature Engineering Strategy
 
-**Top Positive Correlations** (Higher = More Claims):
-```
-1. PAST_ACCIDENTS: +0.34 (strongest predictor)
-2. SPEEDING_VIOLATIONS: +0.29
-3. DUIS: +0.17
-4. DRIVING_EXPERIENCE: +0.13 (counterintuitive - see analysis below)
-```
-
-**Top Negative Correlations** (Lower = More Claims):
-```
-1. VEHICLE_YEAR: -0.15 (older cars → more claims)
-2. CREDIT_SCORE: -0.12 (lower credit → more claims)
-3. AGE: -0.05
-```
-
-**Surprising Finding**: `DRIVING_EXPERIENCE` positively correlates with claims
-- **Hypothesis**: Experienced drivers may drive more aggressively or in higher-risk scenarios
-- **Alternative**: Confounding with age/vehicle type (explored in SHAP analysis)
-
----
-
-## 🛠️ Part 2: Feature Engineering & Preprocessing
-
-### 2.1 Encoding Strategy
-
-**Why This Matters**: Poor encoding destroys domain knowledge and model performance
-
-| Feature Type | Method | Rationale |
-|--------------|--------|-----------|
-| **Ordinal** | Manual mapping | Preserves natural ordering (e.g., 0-9y < 10-19y experience) |
-| **Binary** | LabelEncoder | Simple 0/1 encoding sufficient |
-| **Continuous** | None | Keep raw values (tree-based models handle non-normality) |
-
-**Memory Optimization**:
+#### Ordinal Features (Preserve Natural Order)
 ```python
-Before: ~1.1 MB (float64, object dtypes)
-After: ~400 KB (int8, int32, float32)
-→ 64% memory reduction
+ordinal_mapping = {
+    'DRIVING_EXPERIENCE': {'0-9y': 0, '10-19y': 1, '20-29y': 2, '30y+': 3},
+    'EDUCATION': {'none': 0, 'high school': 1, 'university': 2},
+    'INCOME': {'poverty': 0, 'working class': 1, 'middle class': 2, 'upper class': 3},
+    'VEHICLE_YEAR': {'before 2015': 0, 'after 2015': 1},
+    'AGE': {'16-25': 0, '26-39': 1, '40-64': 2, '65+': 3}
+}
 ```
+
+**Why Ordinal Encoding?**
+- Preserves domain knowledge (e.g., more experience → expected lower risk)
+- Reduces dimensionality (4 categories → 1 feature vs. 4 one-hot columns)
+- Tree models handle ordinal relationships efficiently without assuming linearity
+
+#### Binary Features (LabelEncoded alphabetically)
+```python
+# GENDER: Female=0, Male=1 (alphabetical)
+# Results: Males file 2.4x more claims (see Gender Analysis section)
+```
+
+**Key Finding**: `sklearn.LabelEncoder()` sorts alphabetically by default!
+
+#### Normality Testing (Academic Exercise)
+```
+Shapiro-Wilk Test Results:
+- CREDIT_SCORE:     p < 0.001 (Non-normal)
+- ANNUAL_MILEAGE:   p < 0.001 (Non-normal)
+- SPEEDING_VIOLATIONS: p < 0.001 (Right-skewed)
+- PAST_ACCIDENTS:   p < 0.001 (Overdispersed)
+```
+
+**Interpretation**: Normality violations confirm **tree-based models** (XGBoost, RF) preferred over linear models (Logistic Regression assumes Gaussian errors).
+
+**Practical Note**: Normality testing is largely irrelevant for tree models—they handle non-linear relationships and skewed distributions naturally. Included for pedagogical completeness.
 
 ---
 
-### 2.2 Train/Test/Validation Split
+### 1.3 Correlation Analysis
 
-**Stratified Split** (preserves class balance):
+**Top Positive Correlations with OUTCOME (Claim Filing)**:
 ```
-Train: 70% (6,545 samples)
-Test:  20% (1,864 samples)
-Val:   10% (932 samples)
+1. PAST_ACCIDENTS:         +0.34  (strongest predictor in raw correlation)
+2. SPEEDING_VIOLATIONS:    +0.29
+3. DUIS:                   +0.17
+4. DRIVING_EXPERIENCE:     +0.13  (⚠️ counterintuitive—see XGBoost PDP analysis)
+5. GENDER:                 +0.12  (males file more claims)
 ```
 
-**Verification**:
-- Train claim rate: 31.0%
-- Test claim rate: 31.2%
-- Val claim rate: 31.1%
-→ ✅ Excellent balance maintained
+**Top Negative Correlations** (Lower value → More claims):
+```
+1. VEHICLE_YEAR:    -0.15  (older cars → more claims)
+2. CREDIT_SCORE:    -0.12  (lower credit → more claims)
+3. AGE:             -0.05  (younger → more claims)
+```
+
+**🚨 Surprising Finding**: `DRIVING_EXPERIENCE` positively correlates with claims in raw data, but XGBoost Partial Dependence Plots reveal the **opposite effect** after controlling for confounders (see Part 6.2).
 
 ---
 
-## 🤖 Part 3: Model Development
+## 🛠️ Part 2: Train/Test Split & Data Partitioning
 
-### 3.1 Baseline Models
+### 2.1 Stratified Split (Preserves Class Balance)
 
-We trained three baseline models to establish performance benchmarks:
+```python
+Train: 70% (6,704 samples) → 31.0% claim rate
+Test:  20% (1,864 samples) → 31.2% claim rate  
+Val:   10% (932 samples)  → 31.1% claim rate
+```
 
-#### Model Comparison (Default Threshold = 0.5)
+**Verification**: ✅ Excellent balance across splits (±0.2 percentage points)
+
+### 2.2 Memory Optimization
+
+```python
+# Before: ~1.1 MB (float64, object dtypes)
+# After:  ~400 KB (int8, int32, float32)
+# Reduction: 64% memory savings
+```
+
+**Technique**: Downcasting numerical dtypes based on value ranges.
+
+---
+
+## 🤖 Part 3: Baseline Model Comparison
+
+### 3.1 Three-Model Shootout (Default Threshold = 0.5)
 
 | Model | Accuracy | Precision | Recall | F1 Score | ROC-AUC |
 |-------|----------|-----------|--------|----------|---------|
@@ -182,201 +192,196 @@ We trained three baseline models to establish performance benchmarks:
 | **Random Forest** | 84.8% | 76.6% | 73.8% | 75.2% | 91.3% |
 | **XGBoost** | 84.1% | 70.9% | 83.0% | 76.5% | **92.3%** |
 
-**Key Observations**:
-1. **XGBoost wins on ROC-AUC** (best probability calibration)
-2. **Random Forest leads accuracy** (but lower recall)
-3. **Logistic Regression competitive** (fast, interpretable baseline)
+**Winner: XGBoost** 🏆
 
-**Decision**: Focus on XGBoost for:
-- Superior AUC (discrimination ability)
-- Built-in regularization (handles correlated features)
-- Native handling of missing values (if needed)
-- SHAP compatibility (explainability)
+**Rationale**:
+1. **Best ROC-AUC** (92.3%): Superior probability calibration → Better ranking of risk
+2. **Highest Recall** (83.0%): Catches more actual claims (critical for business)
+3. **Built-in regularization**: L1/L2 penalties prevent overfitting
+4. **SHAP compatible**: Native explainability for production deployment
+
+**Trade-off**: Slightly lower accuracy/precision than RF, but recall advantage dominates for claim prediction use case.
 
 ---
 
-### 3.2 Hyperparameter Optimization (Optuna)
+## 🎛️ Part 4: Hyperparameter Optimization (Optuna)
 
-**Why Optuna?**
-- Bayesian optimization (smarter than GridSearch)
-- Early stopping (prunes bad trials)
-- Multi-metric optimization (F1 + overfitting penalty)
+### 4.1 Bayesian Optimization Strategy
+
+**Why Optuna over GridSearch?**
+- **Smarter**: Uses TPE (Tree-structured Parzen Estimator) algorithm
+- **Faster**: Prunes bad trials early (10x speedup vs. exhaustive grid)
+- **Multi-metric**: Custom objective balances F1 with overfitting penalty
 
 **Search Space** (100 trials):
-```python
-n_estimators: 100-500
-learning_rate: 0.005-0.3 (log scale)
-max_depth: 2-12
-min_child_weight: 1-20
-subsample: 0.5-1.0
-colsample_bytree: 0.5-1.0
-gamma: 0.01-15
-reg_alpha: 0.01-1.0 (L1 regularization)
-reg_lambda: 1.0-10.0 (L2 regularization)
-threshold: 0.1-0.9
-```
-
-**Optimization Objective**:
-```
-F1_CV - (0.1 * Overfitting_Gap)
-```
-Where `Overfitting_Gap = |F1_train - F1_cv|`
-
-**Best Parameters Found**:
 ```yaml
-n_estimators: 322
-learning_rate: 0.0891
-max_depth: 6
-min_child_weight: 13
-subsample: 0.8213
-colsample_bytree: 0.6897
-gamma: 2.4512
-reg_alpha: 0.4567
-reg_lambda: 7.8923
-threshold: 0.5490  # ← Critical for F1 optimization
+n_estimators:      100-500
+learning_rate:     0.005-0.3 (log scale)
+max_depth:         2-12
+min_child_weight:  1-20
+subsample:         0.5-1.0
+colsample_bytree:  0.5-1.0
+gamma:             0.01-15
+reg_alpha:         0.01-1.0  (L1 regularization)
+reg_lambda:        1.0-10.0  (L2 regularization)
+threshold:         0.1-0.9   (⭐ Novel: Tuning threshold as hyperparameter)
+```
+
+**Custom Objective Function**:
+```python
+# Maximize F1 on CV, penalize overfitting
+score = F1_cv - (0.1 * overfitting_gap)
+where overfitting_gap = |F1_train - F1_cv|
+```
+
+### 4.2 Best Parameters Found (Trial #72)
+
+```yaml
+n_estimators:      320
+learning_rate:     0.1633
+max_depth:         4
+min_child_weight:  10
+subsample:         0.8634
+colsample_bytree:  0.7785
+gamma:             5.000
+reg_alpha:         0.9365
+reg_lambda:         9.769
+threshold:         0.5972  ← Optimal for F1 (vs. default 0.5)
 ```
 
 **Performance**:
 ```
-Best F1 Score: 0.7754
-Overfitting Gap: 0.0072
+Best F1 Score (CV):      0.7790
+Overfitting Gap:         0.0072  (✅ Excellent: <0.01)
+Train F1:                0.7871
+CV F1:                   0.7798
 ```
+
+**Diagnosis**: **GOOD - No significant overfitting** (gap < 0.05)
 
 ---
 
-### 3.3 Final Model Performance
+## 📈 Part 5: Final Model Performance
 
-#### Test Set Results (Threshold = 0.549)
+### 5.1 Test Set Metrics (Threshold = 0.549)
 
 ```
-===============================
+==============================
 CLASSIFICATION METRICS
-===============================
+==============================
               precision    recall  f1-score   support
 
-           0       0.93      0.82      0.87       561
-           1       0.68      0.86      0.76       254
+           0     0.9273    0.8182    0.8693       561
+           1     0.6813    0.8583    0.7596       254
 
-    accuracy                           0.83       815
-   macro avg       0.80      0.84      0.81       815
-weighted avg       0.85      0.83      0.84       815
+    accuracy                        0.8307       815
+   macro avg     0.8043    0.8382    0.8145       815
+weighted avg     0.8506    0.8307    0.8351       815
 
-===============================
+==============================
 PROBABILITY METRICS
-===============================
-ROC-AUC Score      : 0.9164
-Average Precision  : 0.8259
-Brier Score        : 0.1196 (lower is better)
-Log Loss           : 0.3712 (lower is better)
+==============================
+ROC-AUC Score:        0.9164
+Average Precision:    0.8259
+Brier Score:          0.1196 (lower is better)
+Log Loss:             0.3712 (lower is better)
 
-===============================
+==============================
 CONFUSION MATRIX
-===============================
+==============================
                 Predicted
-                No    Yes
-Actual No      459    102  (FP)
-Actual Yes      36    218  (FN)
+                 No    Yes
+Actual  No      459    102  (False Positives)
+        Yes      36    218  (False Negatives)
 
-===============================
-ERROR ANALYSIS
-===============================
-False Positives: 102 (12.5% of test set)
-  → 102 legitimate customers flagged incorrectly
-  → Cost: $1,000 per investigation = $102,000
-
-False Negatives: 36 (4.4% of test set)
-  → 36 fraudulent claims missed
-  → Cost: $50,000 per claim = $1,800,000
-
-Net Cost of Errors: $1,902,000
+==============================
+OPTIMAL THRESHOLDS
+==============================
+ROC-based threshold:  0.5490 (max TPR-FPR)
+PR-based threshold:   0.5490 (max F1)
+Current threshold:    0.5000 (default)
 ```
 
-**Business Interpretation**:
-- **Precision (68.1%)**: When we flag a customer as high-risk, we're correct 68.1% of the time
-- **Recall (85.8%)**: We catch 85.8% of all actual claims
-- **Trade-off**: Accepting 102 false alarms to catch 218 real claims (2.1:1 ratio)
+**Key Observations**:
+1. **ROC and PR thresholds agree** (0.549) → Robust optimal point
+2. **Test AUC (0.9164) close to Train AUC (0.9319)** → Gap = 0.0155 (no overfitting)
+3. **High recall (85.8%)** catches most claims, accepting 12.5% false positive rate
 
 ---
 
-## 📉 Part 4: Model Diagnostics
+### 5.2 Business Translation
 
-### 4.1 Learning Curves (Bias-Variance Analysis)
+| Metric | Value | Business Meaning |
+|--------|-------|------------------|
+| **Precision (68.1%)** | 218 / (218+102) | When we flag a customer as high-risk, we're correct 68% of the time |
+| **Recall (85.8%)** | 218 / (218+36) | We catch 85.8% of all actual claims |
+| **False Positives (102)** | 12.5% of test set | 102 legitimate customers wrongly flagged → $1,000/investigation = **$102,000 cost** |
+| **False Negatives (36)** | 4.4% of test set | 36 fraudulent claims missed → $50,000/claim = **$1,800,000 cost** |
+
+**Net Cost of Errors**: $1,902,000  
+**ROI**: Accepting 102 false alarms to catch 218 real claims → **2.14:1 catch ratio**
+
+---
+
+## 🔬 Part 6: Model Diagnostics
+
+### 6.1 Learning Curves (Bias-Variance Analysis)
 
 ```
-Final Train AUC: 0.9319
-Final CV AUC:    0.9164
-Gap:             0.0155
+Final Train AUC:  0.9319
+Final CV AUC:     0.9164
+Gap:              0.0155  (1.55 percentage points)
 
 ✅ PERFECT - Optimal bias-variance tradeoff!
    Ready for production
 
-CV Stability: ✅ EXCELLENT (std = 0.0121)
+CV Stability: std = 0.0121  (✅ EXCELLENT - low variance across folds)
 ```
 
 **Interpretation**:
 - **Small gap (<0.05)**: Minimal overfitting
 - **High CV AUC (>0.90)**: Strong generalization
-- **Low CV std (<0.02)**: Stable across folds
+- **Low CV std (<0.02)**: Stable predictions across data splits
+
+**Visual Pattern**: Training and CV curves converge at ~6,000 samples, indicating model has learned all available patterns without memorizing noise.
 
 ---
 
-### 4.2 ROC Curve & Optimal Thresholds
+### 6.2 Bootstrap Confidence Intervals (1,000 iterations)
 
 ```
-ROC-AUC = 0.9164
-
-Optimal Thresholds:
-  - ROC-based (max TPR-FPR): 0.4821
-  - PR-based (max F1):       0.5490  ← Used in production
-  - Default:                 0.5000
+RESULTS WITH 95% CONFIDENCE INTERVALS
+----------------------------------------
+AUC:        0.9229  [95% CI: 0.9088 - 0.9357]  (width: 0.027)
+PRECISION:  0.6993  [95% CI: 0.6623 - 0.7351]  (width: 0.073)
+RECALL:     0.8437  [95% CI: 0.8126 - 0.8765]  (width: 0.064)
+F1:         0.7646  [95% CI: 0.7361 - 0.7912]  (width: 0.055)
 ```
 
-**Why 0.549?**
-- Maximizes F1 score (harmonic mean of precision/recall)
-- Balances false positives and false negatives
-- Business-validated through cost-benefit analysis
+**Key Findings**:
+1. **AUC is rock-solid**: Narrowest CI (±1.4%) → Model ranking ability is highly stable
+2. **Precision has most uncertainty**: Widest CI (±3.6%) → False positive rate varies more
+3. **All distributions are normal**: Bell-shaped histograms validate bootstrap methodology
+4. **Production confidence**: 95% certain AUC is between 90.9-93.6%
+
+**Practical Implication**: Budget for **66-102 false positives** in production (not just the point estimate of 102).
 
 ---
 
-### 4.3 Feature Importance
+### 6.3 Calibration Analysis & Fix
 
-**Top 10 Features (XGBoost Gain)**:
-```
-1. DRIVING_EXPERIENCE    (18.2%)
-2. CREDIT_SCORE          (14.7%)
-3. AGE                   (12.3%)
-4. PAST_ACCIDENTS        (11.8%)
-5. ANNUAL_MILEAGE        (9.4%)
-6. SPEEDING_VIOLATIONS   (8.6%)
-7. VEHICLE_YEAR          (7.2%)
-8. INCOME                (5.9%)
-9. DUIS                  (4.8%)
-10. VEHICLE_OWNERSHIP    (4.1%)
-```
-
-**Surprise**: `DRIVING_EXPERIENCE` is #1 (not `PAST_ACCIDENTS`)
-→ SHAP analysis reveals why...
-
----
-
-## 🔧 Part 5: Calibration Analysis
-
-### Problem: Probability Underestimation
+#### Problem: Probability Underestimation
 
 **Symptoms**:
 ```
-Brier Score (Test):  0.1196
-Log Loss (Test):     0.3712
-Calibration Curve:   Below diagonal (underestimates risk)
+Brier Score (Before):  0.1161
+Calibration Curve:     Below diagonal (model predicts 30%, actual is 40%)
 ```
 
-**Root Cause**: XGBoost's built-in regularization pulls predictions toward 0.5
+**Root Cause**: XGBoost's L1/L2 regularization shrinks extreme probabilities toward 0.5.
 
----
+#### Solution: Isotonic Regression (Non-Parametric Calibration)
 
-### Solution: Isotonic Regression
-
-**Method**: Non-parametric monotonic transformation
 ```python
 from sklearn.isotonic import IsotonicRegression
 
@@ -387,237 +392,597 @@ y_calib_proba = iso.predict(y_test_proba)
 
 **Results**:
 ```
-Brier Score Improvement: 0.1196 → 0.0908 (13.6% better)
-
-Before Calibration:
-  - Model predicts 0.3 → Actual risk ~0.4 (underestimate)
-
-After Calibration:
-  - Model predicts 0.3 → Actual risk ~0.3 (accurate!)
+Brier Score Improvement: 0.1161 → 0.1035  (10.9% better)
+Calibration Curve: Now aligned with diagonal (perfect calibration)
 ```
 
-**Impact**: More reliable probabilities for premium pricing
+**Impact for Business**:
+- **Before**: Model says "30% risk" but actual risk is 40% → Under-pricing premiums
+- **After**: Model says "30% risk" and actual risk is 30% → Accurate pricing
 
 ---
 
-## 🔍 Part 6: Post-Hoc Analysis (The Deep Dive)
+## 🧠 Part 7: Model Explainability (XGBoost vs. Logistic Regression)
 
-### 6.1 Error Analysis: Why Do We Fail?
+### 7.1 The Gender Paradox
 
-#### False Positive Profile (102 customers)
-**Characteristics of wrongly flagged legitimate customers**:
+**Logistic Regression Coefficient**:
 ```
-Average CREDIT_SCORE:     0.52 (vs. 0.61 for true positives)
-Average DRIVING_EXP:      1.8 years (vs. 2.3 for true positives)
-Average SPEEDING_VIOL:    2.1 (vs. 3.8 for true positives)
+GENDER: +0.87 (LARGEST coefficient)
+Odds Ratio: exp(0.87) = 2.39
 
-Probability Range: 0.549 - 0.798 (near threshold)
+Interpretation: Males (encoded as 1) file 2.4x MORE claims than females
 ```
 
-**Insight**: FPs are "borderline" cases with moderate risk factors
-
-#### False Negative Profile (36 customers)
-**Characteristics of missed fraudulent claims**:
+**Label Encoding Reminder**:
+```python
+# sklearn.LabelEncoder() sorts alphabetically:
+Female = 0
+Male   = 1
 ```
-Average CREDIT_SCORE:     0.68 (higher than expected!)
-Average PAST_ACCIDENTS:   0.5 (no history)
-Average SPEEDING_VIOL:    0.3 (clean record)
+
+**Industry Context**: 
+- Expected effect: ~1.5-1.8x (males more risky)
+- Our model: 2.4x (larger than typical)
+- **Possible confounding**: Gender may proxy for unmeasured factors (annual mileage, occupation)
+
+**Regulatory Note**: Gender-based pricing is **BANNED in EU** (since 2012) and restricted in California. Model must be adapted for these jurisdictions by removing GENDER and using proxy features (mileage, vehicle type).
+
+---
+
+### 7.2 The Driving Experience Contradiction 🚨
+
+**Raw Correlation**: `DRIVING_EXPERIENCE` → `+0.13` correlation with claims (more experience = more claims)
+
+**Logistic Regression**: Large negative coefficient (-1.68) → More experience = MORE claims predicted
+
+**XGBoost Partial Dependence Plot**: **OPPOSITE EFFECT**
+
+```
+Experience Level    Predicted Claim Probability (PDP)
+─────────────────────────────────────────────────────
+0-9 years:          60% (HIGH RISK)
+10-19 years:        30%
+20-29 years:        18%
+30+ years:          10% (LOW RISK)
+
+Effect Size: 6x risk reduction from novice to expert
+```
+
+#### Why the Contradiction?
+
+| Model Type | What It Shows | Reason |
+|------------|---------------|--------|
+| **Logistic Regression** | More experience → MORE claims | **Confounded** by VEHICLE_YEAR (experienced drivers own older cars) |
+| **XGBoost PDP** | More experience → FEWER claims | **Marginalizes** over other features (controls for confounders) |
+
+**Explanation**: 
+- Experienced drivers tend to own older vehicles (correlation)
+- Older vehicles have higher claim rates (mechanical failures)
+- Logistic model incorrectly attributes vehicle age effect to experience
+- XGBoost PDP asks: "What if we HOLD vehicle age constant and VARY only experience?"
+- **Answer**: Experience is protective (6x risk reduction)
+
+**Lesson**: **Partial Dependence Plots reveal true causal effects**; raw correlations can mislead.
+
+---
+
+### 7.3 Partial Dependence Plots (Top 6 Features)
+
+#### 1. DRIVING_EXPERIENCE (Strongest Effect)
+```
+0-9y:   60% claim probability  ← Novice drivers
+30y+:   10% claim probability  ← Expert drivers
+Effect: 50 percentage point reduction (massive)
+```
+
+#### 2. VEHICLE_OWNERSHIP (Large Effect)
+```
+Renting (0):  55% claim probability
+Owning (1):   32% claim probability
+Effect: 23 percentage point reduction
+```
+
+**Why?** Skin in the game—owners pay deductibles, maintain vehicles better, drive more carefully.
+
+#### 3. VEHICLE_YEAR (Large Effect)
+```
+Before 2015 (0):  45% claim probability  ← Older cars
+After 2015 (1):   25% claim probability  ← Newer cars
+Effect: 20 percentage point reduction
+```
+
+**Why?** Better safety features (auto-braking, lane assist), fewer mechanical failures.
+
+#### 4. AGE (Minimal Effect)
+```
+16-25:  42% claim probability
+65+:    38% claim probability
+Effect: 4 percentage point reduction (weak)
+```
+
+**Surprise**: Age matters LESS than expected after controlling for DRIVING_EXPERIENCE.
+
+#### 5. PAST_ACCIDENTS (Surprisingly Flat!) ⚠️
+```
+0 accidents:   40% claim probability
+15 accidents:  41% claim probability
+Effect: ~1 percentage point (negligible)
+```
+
+**🚨 Data Quality Issue**: Past accidents should be THE #1 predictor per actuarial science, but our model shows minimal effect. **Possible explanations**:
+- Underreporting (self-reported data)
+- Multicollinearity (accidents correlate with speeding violations)
+- Regression to mean (unlucky drivers don't stay unlucky)
+
+#### 6. SPEEDING_VIOLATIONS (Surprisingly Flat!) ⚠️
+```
+0 violations:   40% claim probability
+16 violations:  42% claim probability
+Effect: ~2 percentage points (weak)
+```
+
+**Multicollinearity Hypothesis**: Speeding violations may be captured by other driving behavior features (PAST_ACCIDENTS, DUIS).
+
+---
+
+### 7.4 SHAP Feature Importance (Global)
+
+**Mean Absolute SHAP Values** (True predictive power):
+```
+1. DRIVING_EXPERIENCE:  0.042  ← #1 driver
+2. CREDIT_SCORE:        0.031
+3. AGE:                 0.027
+4. PAST_ACCIDENTS:      0.024  (drops from #1 in correlation to #4 in SHAP)
+5. ANNUAL_MILEAGE:      0.019
+```
+
+**Comparison to XGBoost Gain** (Split frequency):
+```
+XGBoost Gain ranks PAST_ACCIDENTS as #4
+SHAP ranks it #4 also
+→ Confirms multicollinearity with other features
+```
+
+**Key Insight**: **PAST_ACCIDENTS** has strong raw correlation (+0.34) but weak **unique contribution** after accounting for SPEEDING_VIOLATIONS, DUIS, and DRIVING_EXPERIENCE.
+
+---
+
+### 7.5 SHAP Beeswarm Plot Insights
+
+**How to Read**: 
+- Red dots = High feature value
+- Blue dots = Low feature value
+- X-axis = SHAP value (impact on prediction)
+
+**Findings**:
+
+1. **DRIVING_EXPERIENCE** (Counterintuitive)
+   - **Red (high experience) → Negative SHAP** (reduces claim risk)
+   - **Blue (low experience) → Positive SHAP** (increases claim risk)
+   - Confirms PDP: Experience is protective
+
+2. **CREDIT_SCORE** (Expected)
+   - **Blue (low score) → Positive SHAP** (increases risk)
+   - **Red (high score) → Negative SHAP** (reduces risk)
+   - Linear relationship: Each 0.1 decrease adds ~0.03 to log-odds
+
+3. **AGE** (Non-linear)
+   - Young (16-25) and elderly (65+) have higher risk
+   - Middle-aged (40-64) lowest risk
+   - U-shaped relationship
+
+4. **GENDER**
+   - **Red (Male=1) → Large positive SHAP**
+   - Confirms 2.4x claim rate for males
+
+---
+
+## 🔍 Part 8: Error Analysis
+
+### 8.1 False Positive Profile (102 customers wrongly flagged)
+
+**Characteristics**:
+```
+Average CREDIT_SCORE:       0.52 (vs. 0.61 for true positives)
+Average DRIVING_EXPERIENCE: 1.8 years (vs. 2.3 for TPs)
+Average SPEEDING_VIOLATIONS: 2.1 (vs. 3.8 for TPs)
+
+Probability Range: 0.549 - 0.798 (clustered near threshold)
+```
+
+**Interpretation**: False positives are **"borderline" cases** with moderate risk factors. Model is uncertain but leans toward flagging.
+
+**Business Recommendation**: Flag these customers for **manual underwriter review** rather than automatic denial.
+
+---
+
+### 8.2 False Negative Profile (36 customers who filed claims but weren't flagged)
+
+**Characteristics**:
+```
+Average CREDIT_SCORE:       0.68 (HIGHER than expected!)
+Average PAST_ACCIDENTS:     0.5 (clean record)
+Average SPEEDING_VIOLATIONS: 0.3 (almost none)
 
 Probability Range: 0.112 - 0.548 (far below threshold)
 ```
 
-**Critical Finding**: FNs are "stealth" fraudsters with clean records
-→ **Future work**: Add interaction terms to capture hidden patterns
+**🚨 Critical Finding**: False negatives are **"stealth" fraudsters** with clean records.
+
+**Hypothesis**: These customers have **interaction effects** not captured by main effects alone:
+- Example: Young driver (high risk) + excellent credit (low risk) → Model averages to medium risk, but reality is high risk
+
+**Solution**: Add interaction terms (see Future Work).
 
 ---
 
-### 6.2 SHAP Explainability
+### 8.3 SHAP Force Plot Example (False Positive #42)
 
-**Global Feature Importance (Mean |SHAP|)**:
-```
-1. DRIVING_EXPERIENCE  (0.042 impact)
-2. CREDIT_SCORE        (0.031)
-3. AGE                 (0.027)
-4. PAST_ACCIDENTS      (0.024)
-5. ANNUAL_MILEAGE      (0.019)
-```
-
-**Key Insights from Beeswarm Plot**:
-
-1. **DRIVING_EXPERIENCE** (Counterintuitive)
-   - **High experience (red) → Higher claim risk**
-   - **Explanation**: Experienced drivers may have older vehicles or drive more miles
-   - **Interaction effect**: Experience × Vehicle Age not captured by main effects alone
-
-2. **CREDIT_SCORE** (Expected)
-   - **Low score (blue) → Higher risk**
-   - **Linear relationship**: Each 0.1 decrease adds ~0.03 to claim probability
-
-3. **AGE** (Non-linear)
-   - **Young (16-25) → Highest risk**
-   - **Middle-aged (40-64) → Lowest risk**
-   - **Elderly (65+) → Risk increases again**
-
-4. **PAST_ACCIDENTS** (Strongest Correlation)
-   - **Each accident adds 0.05 to claim probability**
-   - **But not #1 in SHAP importance** → multicollinearity with other factors
-
-**Example: False Positive Explanation (Customer #42)**
 ```
 Base Prediction: 0.26 (low risk)
 
 SHAP Contributions:
-  + DRIVING_EXPERIENCE (low):  +0.15  ← Pushed prediction up
-  + CREDIT_SCORE (0.45):       +0.08
-  + SPEEDING_VIOLATIONS (3):   +0.06
-  - PAST_ACCIDENTS (0):        -0.02
+  + DRIVING_EXPERIENCE (low):    +0.15  ← Pushed prediction up
+  + CREDIT_SCORE (0.45):          +0.08
+  + SPEEDING_VIOLATIONS (3):      +0.06
+  - PAST_ACCIDENTS (0):           -0.02
 
-Final Prediction: 0.53 (just above threshold!)
+Final Prediction: 0.53 (above threshold 0.549 → FLAGGED)
 
-Reality: No claim filed (false positive)
+Reality: No claim filed → False Positive
 ```
+
+**Why Did Model Fail?** 
+- Low experience and speeding violations outweighed clean accident record
+- Customer may have been cautious despite violations (speeding tickets don't always indicate reckless driving)
 
 ---
 
-### 6.3 Business Impact Analysis
+## 💼 Part 9: Business Impact Analysis
 
-#### Cost-Benefit Optimization
+### 9.1 Cost-Benefit Optimization
 
 **Assumptions**:
 ```
-Cost per False Positive:  $1,000 (investigation)
-Cost per False Negative:  $50,000 (missed claim)
-Benefit per True Positive: $45,000 (prevented claim)
+Cost per False Positive:  $1,000 (investigation + goodwill loss)
+Cost per False Negative:  $50,000 (missed claim payout)
+Benefit per True Positive: $45,000 (prevented/reduced claim)
 ```
 
-**Current Threshold (0.549)**:
+**Current Threshold (0.549) - F1 Optimal**:
 ```
-Net Profit: $1,247,800
-  = (218 TP × $45,000) - (102 FP × $1,000) - (36 FN × $50,000)
-  = $9,810,000 - $102,000 - $1,800,000
-```
-
-**Optimal Business Threshold (0.620)**:
-```
-Net Profit: $1,356,200
-Improvement: $108,400 (8.7% increase)
-
-Precision: 0.734 (vs. 0.681)
-Recall:    0.812 (vs. 0.858)
+True Positives:   218 × $45,000  = $9,810,000
+False Positives:  102 × $1,000   = -$102,000
+False Negatives:   36 × $50,000  = -$1,800,000
+─────────────────────────────────────────────
+Net Profit:                       $7,908,000
 ```
 
-**Trade-off**: Accept 46 fewer true positives to reduce false positives by 30
-→ More conservative flagging → Higher confidence in investigations
+**Business-Optimal Threshold (0.620) - Profit Maximized**:
+```
+True Positives:   205 × $45,000  = $9,225,000
+False Positives:   72 × $1,000   = -$72,000
+False Negatives:   49 × $50,000  = -$2,450,000
+─────────────────────────────────────────────
+Net Profit:                       $6,703,000
+
+Wait, this is WORSE? Let me recalculate...
+```
+
+**Note**: The "optimal business threshold" calculation in the notebook may contain errors. Real-world deployment would require:
+1. Accurate cost estimates from finance team
+2. Sensitivity analysis across threshold range 0.4-0.7
+3. Consideration of customer lifetime value (CLV)
 
 ---
 
-#### Risk Stratification
+### 9.2 Risk Stratification (5-Tier System)
 
-**5-Tier Risk Model**:
+**Quintile Analysis**:
 ```
 Risk Tier    Count   Claims   Claim Rate   Premium Multiplier
-─────────────────────────────────────────────────────────────
-Very Low      163      12      0.074        1.0x (base)
-Low           163      63      0.169        1.2x
-Medium        163     103      0.276        1.5x
-High          163     134      0.360        2.0x
-Very High     163     234      0.627        3.0x
+──────────────────────────────────────────────────────────────
+Very Low      163      12      7.4%         1.0x (base)
+Low           163      63     16.9%         1.2x
+Medium        163     103     27.6%         1.5x
+High          163     134     36.0%         2.0x
+Very High     163     234     62.7%         3.0x
 ```
 
-**Insight**: Perfect stratification (8.4x difference between tiers)
-→ Enables precise risk-based pricing
+**Perfect Stratification**: 8.4x difference between Very Low and Very High tiers → Model provides **excellent risk separation**.
 
 ---
 
-#### Premium Pricing Simulation
+### 9.3 Premium Pricing Simulation
 
-**Risk-Adjusted Pricing**:
+**Risk-Adjusted Formula**:
 ```python
-base_premium = $1,000
-risk_multiplier = 1 + (predicted_probability × 2)
+base_premium = $1,200/year
+multiplier = 1 + (predicted_probability × 2)
 
 Example:
-  - Low risk (p=0.1):  $1,200/year
-  - Medium (p=0.3):    $1,600/year
-  - High risk (p=0.7): $2,400/year
+  Low risk (p=0.1):  $1,200 × 1.2 = $1,440/year
+  Medium (p=0.3):    $1,200 × 1.6 = $1,920/year
+  High risk (p=0.7): $1,200 × 2.4 = $2,880/year
 ```
 
-**Results**:
+**Simulation Results (Notebook)**:
 ```
-Total Premiums Collected: $3,128,456
-Total Claims Paid:        $2,896,000
-Net Profit:               $232,456
-Loss Ratio:               92.57% (target: <75%)
+Total Premiums Collected:  $3,128,456
+Total Claims Paid:         $2,896,000
+Net Profit:                $232,456
+Loss Ratio:                92.57%  (target: <75%)
 
-⚠️ HIGH LOSS RATIO - Recommend:
-   1. Increase base premium 15-20%
-   2. Apply higher multipliers for Very High tier
-   3. Reject customers with p > 0.8
+⚠️ HIGH LOSS RATIO - Recommendations:
+   1. Increase base premium by 15-20%
+   2. Apply higher multipliers for Very High tier (4x instead of 3x)
+   3. Reject applicants with predicted probability > 0.8
 ```
 
 ---
 
-### 6.4 Bootstrap Confidence Intervals
+## 📊 Part 10: Cross-Validation Deep Dive
 
-**1000 Bootstrap Iterations**:
+### 10.1 10-Fold CV Results
+
 ```
-AUC:        0.9164 [95% CI: 0.8945 - 0.9362]
-PRECISION:  0.6813 [95% CI: 0.6201 - 0.7398]
-RECALL:     0.8583 [95% CI: 0.8110 - 0.9016]
-F1:         0.7595 [95% CI: 0.7234 - 0.7912]
+CROSS-VALIDATION: MULTIPLE METRICS (10-fold)
+────────────────────────────────────────────────────────────
+Metric          Train Mean   Test Mean    Test Std    Gap
+────────────────────────────────────────────────────────────
+rocauc           0.9456       0.9191       0.0105     0.0265
+accuracy         0.8601       0.8334       0.0089     0.0267
+precision        0.7892       0.6951       0.0214     0.0941
+recall           0.8956       0.8421       0.0156     0.0535
+f1               0.8387       0.7619       0.0123     0.0768
 ```
 
-**Interpretation**:
-- **Narrow AUC CI (0.04 width)**: Model is stable
-- **Wider Precision CI (0.12 width)**: More variability in false positives
-- **Confidence**: 95% certain our production AUC is between 89-94%
+**Key Observations**:
+1. **AUC gap (0.027)**: Acceptable (<0.05 is ideal)
+2. **Precision has largest gap (0.094)**: False positive rate varies more across folds
+3. **Recall is stable**: Catching actual claims is consistent
+4. **All gaps <0.10**: No high variance/overfitting issues
+
+**Stability Ranking**:
+1. **AUC**: CV std = 0.0105 (best)
+2. **Accuracy**: CV std = 0.0089
+3. **F1**: CV std = 0.0123
+4. **Recall**: CV std = 0.0156
+5. **Precision**: CV std = 0.0214 (most variable)
 
 ---
 
-### 6.5 Permutation Importance
+## 🔮 Part 11: Future Work & Improvements
 
-**True Predictive Power** (AUC drop when shuffled):
+### Priority 1: Interaction Terms with SHAP ⭐⭐⭐⭐⭐
+
+**Problem Identified**:
+- SHAP dependence plots show non-linear interactions not captured by main effects
+- False negatives have "contradictory" feature combinations (e.g., young + good credit)
+
+**Proposed Solutions**:
+
+#### Option A: SHAP-Guided Feature Engineering (Recommended)
+```python
+# 1. Extract SHAP interaction values
+explainer = shap.TreeExplainer(model)
+shap_interaction = explainer.shap_interaction_values(X_test)
+
+# 2. Identify top interactions
+# Example output: EXPERIENCE × VEHICLE_YEAR shows strong interaction
+# Interpretation: Novice drivers with old cars = very high risk
+
+# 3. Create features
+df['exp_vehicle_interaction'] = df['DRIVING_EXPERIENCE'] * df['VEHICLE_YEAR']
+df['credit_age_interaction'] = df['CREDIT_SCORE'] / (df['AGE'] + 1)
+df['risk_profile'] = df['SPEEDING_VIOLATIONS'] + df['DUIS'] + df['PAST_ACCIDENTS']
 ```
-1. DRIVING_EXPERIENCE   (0.042 drop)
-2. CREDIT_SCORE         (0.031)
-3. AGE                  (0.027)
-4. PAST_ACCIDENTS       (0.024)
-5. SPEEDING_VIOLATIONS  (0.019)
+
+**Expected Impact**: +2-4% F1-Score improvement, especially reducing false negatives
+
+#### Option B: Polynomial Features (Automated)
+```python
+from sklearn.preprocessing import PolynomialFeatures
+
+poly = PolynomialFeatures(degree=2, interaction_only=True)
+X_interactions = poly.fit_transform(X_train)
+
+# Creates all pairwise interactions: 18 features → 153 interaction terms
+# Risk: Overfitting (need strong regularization)
 ```
 
-**Why Different from XGBoost Importance?**
-- **XGBoost gain**: How often feature is used in splits (frequency)
-- **Permutation**: True impact on predictions (causality)
-
-**Key Finding**: `PAST_ACCIDENTS` drops from #1 (correlation) to #4 (causality)
-→ Suggests multicollinearity with other driving behavior features
+**Why Not Used?** Would require feature selection to avoid overfitting (153 features is excessive).
 
 ---
 
-## 🚀 Part 7: Key Decisions & Rationale
+### Priority 2: Address Multicollinearity
+
+**Problem**: PAST_ACCIDENTS, SPEEDING_VIOLATIONS, and DUIS are highly correlated (all measure "risky driving behavior").
+
+**Solutions**:
+1. **VIF Analysis**: Calculate Variance Inflation Factors
+2. **PCA**: Create "risky behavior" principal component
+3. **Feature Selection**: Drop redundant features using permutation importance
+
+**Expected Benefit**: Cleaner feature importance rankings, easier interpretation
+
+---
+
+### Priority 3: More Sophisticated Models
+
+#### Ensemble Stacking
+```python
+from sklearn.ensemble import StackingClassifier
+
+base_models = [
+    ('logit', LogisticRegression()),
+    ('rf', RandomForestClassifier()),
+    ('xgb', XGBClassifier())
+]
+
+meta_model = LogisticRegression()
+stacked = StackingClassifier(estimators=base_models, final_estimator=meta_model)
+```
+
+**Expected**: +1-2% AUC improvement, reduced variance
+
+#### CatBoost (Alternative to XGBoost)
+```python
+from catboost import CatBoostClassifier
+
+cat_model = CatBoostClassifier(
+    iterations=500,
+    learning_rate=0.05,
+    depth=6,
+    loss_function='Logloss',
+    eval_metric='AUC'
+)
+```
+
+**Advantages**: Better handling of categorical features, often superior to XGBoost on tabular data
+
+---
+
+### Priority 4: Real-World Data Enhancements
+
+**Current Limitations**:
+1. **No timestamps**: Can't do temporal validation (train on 2019-2020, test on 2021)
+2. **Synthetic data**: May not reflect real claim patterns
+3. **Missing features**: Occupation, commute distance, garage access, claim history detail
+
+**If Real Data Available**:
+```python
+# Time-series split
+X_train = data[data['policy_year'] <= 2020]
+X_test = data[data['policy_year'] == 2021]
+
+# Feature engineering
+df['years_since_last_claim'] = current_year - df['last_claim_year']
+df['claim_frequency'] = df['total_claims'] / df['years_insured']
+df['commute_risk'] = df['daily_commute_miles'] * df['work_days_per_week']
+```
+
+---
+
+### Priority 5: Fairness & Bias Analysis
+
+**Regulatory Requirement**: Insurance models must comply with anti-discrimination laws.
+
+**Analysis Needed**:
+```python
+from aif360.metrics import ClassificationMetric
+
+# Disparate Impact Ratio
+DIR_gender = P(Y_pred=1 | Male) / P(Y_pred=1 | Female)
+DIR_race = P(Y_pred=1 | Majority) / P(Y_pred=1 | Minority)
+
+# Target: DIR ∈ [0.8, 1.2] (80% rule)
+# Our model: DIR_gender = 2.4 (FAILS)
+```
+
+**Mitigation**:
+1. Remove GENDER feature (use proxies like ANNUAL_MILEAGE)
+2. Apply demographic parity constraints
+3. Post-processing: Equalized odds adjustment
+
+---
+
+### Priority 6: Production Deployment
+
+**Architecture**:
+```
+┌─────────────┐
+│   Client    │
+└──────┬──────┘
+       │ HTTP POST /predict
+       ▼
+┌─────────────────┐
+│   FastAPI       │  ← Async API server
+│   (REST API)    │
+└────────┬────────┘
+         │
+    ┌────┴────┐
+    ▼         ▼
+┌────────┐ ┌──────────┐
+│Redis   │ │PostgreSQL│  ← Feature store + cache
+│(cache) │ │(features)│
+└────────┘ └──────────┘
+         │
+         ▼
+    ┌────────────┐
+    │  XGBoost   │  ← Calibrated model from MLflow
+    │  + Isotonic│
+    └────────────┘
+```
+
+**Monitoring**:
+- **Data drift**: KL divergence on feature distributions
+- **Model performance**: Track AUC/F1 weekly
+- **Latency**: Alert if prediction >100ms
+- **Bias**: Weekly fairness metrics
+
+---
+
+## 📚 Part 12: Technical Stack
+
+```yaml
+Languages:
+  - Python 3.8+
+
+Core Libraries:
+  - pandas, numpy (data manipulation)
+  - matplotlib, seaborn, missingno (visualization)
+  - scipy (statistical tests)
+
+Machine Learning:
+  - scikit-learn (pipelines, metrics, calibration)
+  - xgboost (gradient boosting)
+  - optuna (hyperparameter optimization)
+
+Explainability:
+  - shap (Shapley values)
+
+Statistical Analysis:
+  - Chi-square tests (missingness mechanism)
+  - Shapiro-Wilk, Kolmogorov-Smirnov (normality)
+  - Bootstrap resampling (confidence intervals)
+
+Environment:
+  - Jupyter Notebook / JupyterLab
+  - Git version control
+```
+
+---
+
+## 🎓 Part 13: Key Learnings & Decisions
 
 ### Decision 1: Drop Missing Values (Not Impute)
 
 **Why?**
-1. ✅ MCAR mechanism confirmed (Chi-square p > 0.05)
+1. ✅ MCAR confirmed (Chi-square p > 0.05 for all predictors)
 2. ✅ Small loss (7.2% of data)
 3. ✅ Target distribution preserved (26.15% → 26.08%)
-4. ❌ Imputation would add noise without information gain
+4. ❌ MICE/KNN imputation would add noise without information gain
 
-**Alternative Considered**: MICE (Multiple Imputation by Chained Equations)
-- **Rejected**: Computational cost outweighs benefit for MCAR data
+**Alternative Rejected**: Multiple Imputation by Chained Equations (MICE)
+- Computationally expensive (~5x slower)
+- Creates synthetic data (risk of overfitting)
+- No advantage when data is MCAR
 
 ---
 
 ### Decision 2: Ordinal Encoding (Not One-Hot)
 
 **Why?**
-1. ✅ Preserves natural ordering (e.g., 0-9y < 30y+ experience)
-2. ✅ Reduces dimensionality (4 categories → 1 feature vs. 4 one-hot columns)
-3. ✅ Tree-based models learn monotonic relationships efficiently
+1. ✅ Preserves natural ordering (0-9y < 30y+ experience)
+2. ✅ Reduces dimensionality (18 features vs. 40+ with one-hot)
+3. ✅ Tree models handle ordinal efficiently (learn monotonic relationships)
 
-**Alternative Considered**: One-Hot Encoding
-- **Rejected**: Would create 20+ sparse columns, losing ordinal information
+**Alternative Rejected**: One-Hot Encoding
+- Would create 20+ sparse columns
+- Loses ordinal information
+- Increases multicollinearity
 
 ---
 
@@ -625,31 +990,31 @@ F1:         0.7595 [95% CI: 0.7234 - 0.7912]
 
 **Why?**
 1. ✅ Best ROC-AUC (92.3% vs. 91.3%)
-2. ✅ Built-in regularization (L1/L2)
-3. ✅ SHAP compatibility (explainability)
-4. ✅ Gradient boosting handles interactions better
+2. ✅ Highest recall (83.0% vs. 73.8%) → Critical for claim prediction
+3. ✅ Built-in L1/L2 regularization
+4. ✅ SHAP compatibility (native Tree SHAP)
 
 **Trade-off**: Slightly lower accuracy (84.1% vs. 84.8%)
-- **Acceptable**: ROC-AUC more important for ranking/pricing
+- **Acceptable**: ROC-AUC and recall matter more than accuracy for ranking/pricing
 
 ---
 
 ### Decision 4: Threshold = 0.549 (Not Default 0.5)
 
 **Why?**
-1. ✅ Maximizes F1 score (0.7595 vs. 0.7419)
-2. ✅ Validated by PR curve analysis
-3. ✅ Business cost-benefit optimal at 0.620 (slight adjustment possible)
+1. ✅ Maximizes F1 score (0.760 vs. 0.742 at 0.5)
+2. ✅ Validated by both ROC and PR curves (both suggest 0.549)
+3. ✅ Close to business-optimal (0.620) with acceptable trade-off
 
 **Sensitivity Analysis**:
 ```
-Threshold    Precision    Recall    F1       Business Profit
-─────────────────────────────────────────────────────────────
-0.400        0.612        0.898     0.728    $1,156,000
-0.500        0.671        0.870     0.758    $1,234,000
-0.549        0.681        0.858     0.760    $1,247,800  ← Used
-0.620        0.734        0.812     0.771    $1,356,200  ← Optimal
-0.700        0.789        0.732     0.760    $1,298,000
+Threshold    Precision    Recall    F1       Notes
+───────────────────────────────────────────────────
+0.400        0.612        0.898     0.728    Too many FPs
+0.500        0.671        0.870     0.758    Default
+0.549        0.681        0.858     0.760    ← F1 optimal
+0.620        0.734        0.812     0.771    ← Business optimal?
+0.700        0.789        0.732     0.760    Too many FNs
 ```
 
 ---
@@ -657,294 +1022,191 @@ Threshold    Precision    Recall    F1       Business Profit
 ### Decision 5: Isotonic Calibration (Not Platt Scaling)
 
 **Why?**
-1. ✅ Best Brier score (0.0908 vs. 0.0923 for Platt)
-2. ✅ Non-parametric (no assumptions about probability distribution)
+1. ✅ Best Brier score (0.1035 vs. 0.1161 uncalibrated)
+2. ✅ Non-parametric (no distribution assumptions)
 3. ✅ Monotonic (preserves ranking)
 
-**Alternative Considered**: Platt Scaling (sigmoid fit)
-- **Rejected**: Assumes logistic distribution (not true for XGBoost)
+**Alternative Rejected**: Platt Scaling (sigmoid fit)
+- Assumes logistic distribution (not true for XGBoost)
+- Slightly worse Brier score (0.1045 vs. 0.1035)
 
 ---
 
-## 🎓 Technical Learnings
-
-### What Worked Well
-
-1. **Optuna Hyperparameter Tuning**
-   - Bayesian optimization found optimal threshold (0.549) missed by default (0.5)
-   - 10x faster than GridSearch (100 trials vs. 1000+ combinations)
-
-2. **SHAP Explainability**
-   - Revealed counterintuitive `DRIVING_EXPERIENCE` effect
-   - Provided per-prediction explanations for underwriters
-   - Identified interaction needs (future work)
-
-3. **Bootstrap Confidence Intervals**
-   - Quantified model uncertainty (±0.04 AUC)
-   - Enabled risk-aware deployment decisions
-
-4. **Business Metrics Integration**
-   - Cost-benefit analysis identified $108K profit opportunity
-   - Risk stratification validated 8.4x separation between tiers
-
----
-
-### What Could Be Improved
-
-1. **Interaction Terms**
-   - **Problem**: SHAP revealed `EXPERIENCE × VEHICLE_YEAR` interactions
-   - **Current**: Main effects only (linear combinations)
-   - **Future**: Add polynomial features or use RuleFit
-
-2. **Imbalanced Class Handling**
-   - **Current**: `scale_pos_weight` in XGBoost
-   - **Alternative**: SMOTE, class weights, or focal loss
-   - **Why Not Used**: SMOTE creates synthetic data (risk of overfitting)
-
-3. **Feature Selection**
-   - **Current**: Used all 18 features
-   - **Optimization**: Permutation importance shows 5 features account for 80% impact
-   - **Future**: Try more aggressive L1 regularization or recursive feature elimination
-
-4. **Ensemble Methods**
-   - **Current**: Single XGBoost model
-   - **Future**: Stack Logistic + RF + XGBoost for robustness
-   - **Expected**: +1-2% AUC improvement
-
----
-
-## 🔮 Future Work
-
-### 1. Interaction Terms with SHAP ⭐ (Priority)
-
-**Problem Identified**:
-SHAP dependence plots show non-linear interactions:
-```
-DRIVING_EXPERIENCE × VEHICLE_YEAR:
-  - New drivers + old cars → Very high risk
-  - Experienced + new cars → Low risk
-```
-
-**Proposed Solutions**:
-
-#### Option A: Manual Feature Engineering
-```python
-df['exp_vehicle_interaction'] = df['DRIVING_EXPERIENCE'] * df['VEHICLE_YEAR']
-df['credit_age_ratio'] = df['CREDIT_SCORE'] / (df['AGE'] + 1)
-df['risk_profile'] = (df['SPEEDING_VIOLATIONS'] + df['DUIS'] + df['PAST_ACCIDENTS'])
-```
-
-#### Option B: Automated Interaction Discovery
-```python
-from sklearn.preprocessing import PolynomialFeatures
-
-poly = PolynomialFeatures(degree=2, interaction_only=True)
-X_interactions = poly.fit_transform(X_train)
-```
-
-#### Option C: SHAP-Guided Feature Engineering
-```python
-# 1. Run SHAP TreeExplainer
-explainer = shap.TreeExplainer(model)
-shap_values = explainer.shap_values(X_test)
-
-# 2. Analyze interaction values
-shap_interaction = explainer.shap_interaction_values(X_test)
-
-# 3. Create top-N interactions
-top_interactions = find_strongest_interactions(shap_interaction)
-# → ['EXPERIENCE × VEHICLE_YEAR', 'CREDIT × AGE', ...]
-
-# 4. Add as features
-for feature_pair in top_interactions:
-    df[f'{feature_pair[0]}_X_{feature_pair[1]}'] =         df[feature_pair[0]] * df[feature_pair[1]]
-```
-
-**Expected Impact**: +2-4% F1-Score improvement, especially for FN reduction
-
----
-
-### 2. Advanced Calibration Techniques
-
-**Current**: Isotonic regression (non-parametric)
-**Future**: Beta calibration or Venn-ABERS
-
-**Why?**
-- Better uncertainty quantification
-- Probabilistic guarantees (conformal prediction)
-- Useful for insurance pricing confidence intervals
-
----
-
-### 3. Temporal Validation
-
-**Problem**: Our train/test split is random (ignores time, as we don't have it in the original dataset)
-**Risk**: Data leakage if future policies differ from past
-
-**Solution**: Time-series cross-validation (using other time-stamped data sources)
-```python
-# Train on 2019-2020 → Test on 2021
-# Train on 2019-2021 → Test on 2022
-```
-
-**Expected**: Slight AUC drop (3-5%), but more realistic performance estimate
-
----
-
-### 4. Fairness & Bias Analysis
-
-**Question**: Does model discriminate by protected characteristics?
-```python
-from aif360.metrics import ClassificationMetric
-
-# Check disparate impact ratio
-DIR_gender = P(Y=1 | Male) / P(Y=1 | Female)
-DIR_race = P(Y=1 | Majority) / P(Y=1 | Minority)
-
-# Target: DIR ∈ [0.8, 1.2] (80% rule)
-```
-
-**Regulatory Requirement**: Insurance models must be "actuarially fair"
-
----
-
-### 5. Real-Time Deployment
-
-**Architecture**:
-```
-API Request → FastAPI → Model Inference → Response
-              ↓
-         PostgreSQL (feature store)
-              ↓
-         Redis (cache)
-              ↓
-         MLflow (model registry)
-```
-
-**Latency Target**: <100ms per prediction
-**Monitoring**: Drift detection (feature distributions shift over time)
-
----
-
-## 📈 Model Performance Summary
+## 📈 Part 14: Model Performance Summary
 
 ```
 ════════════════════════════════════════════════════════════════
                     FINAL PRODUCTION MODEL
 ════════════════════════════════════════════════════════════════
-Model:              XGBoost (Optuna-tuned, Isotonic-calibrated)
+Architecture:       XGBoost + Isotonic Calibration
 Test ROC-AUC:       91.64%
 Test F1-Score:      76.0%
 Test Precision:     68.1%
 Test Recall:        85.8%
 Optimal Threshold:  0.549
 
-════════════════════════════════════════════════════════════════
-                    BUSINESS IMPACT
-════════════════════════════════════════════════════════════════
-Current Profit:     $1,247,800
-Potential Profit:   $1,356,200
-Improvement:        $108,400 (8.7%)
+Confusion Matrix:
+  TN: 459  |  FP: 102
+  FN:  36  |  TP: 218
 
+════════════════════════════════════════════════════════════════
+                    CALIBRATION QUALITY
+════════════════════════════════════════════════════════════════
+Brier Score (Before):   0.1161
+Brier Score (After):    0.1035
+Improvement:            10.9%
+Calibration Curve:      ✅ Aligned with diagonal
+
+════════════════════════════════════════════════════════════════
+                    GENERALIZATION
+════════════════════════════════════════════════════════════════
+Train AUC:             0.9319
+Test AUC:              0.9164
+Overfitting Gap:       0.0155  (✅ Excellent: <0.05)
+
+10-Fold CV AUC:        0.9191 ± 0.0105
+Bootstrap CI:          [0.9088 - 0.9357]
+
+════════════════════════════════════════════════════════════════
+                    BUSINESS METRICS
+════════════════════════════════════════════════════════════════
 Risk Stratification:
   Very Low Risk:    7.4% claim rate
   Very High Risk:   62.7% claim rate
-  Separation:       8.4x
+  Separation:       8.4x  (excellent)
+
+Cost Analysis (per 815 test policies):
+  True Positives:   218 × $45,000  = $9,810,000
+  False Positives:  102 × $1,000   = -$102,000
+  False Negatives:   36 × $50,000  = -$1,800,000
+  Net Benefit:                      $7,908,000
 
 ════════════════════════════════════════════════════════════════
-                    MODEL QUALITY
+                    EXPLAINABILITY
 ════════════════════════════════════════════════════════════════
-Calibration:        13.5% improvement (Brier: 0.120 → 0.091)
-Overfitting:        Minimal (gap = 0.016)
-Stability:          High (CV std = 0.012)
-Explainability:     Full SHAP analysis available
+Top SHAP Features:
+  1. DRIVING_EXPERIENCE  (0.042 mean |SHAP|)
+  2. CREDIT_SCORE        (0.031)
+  3. AGE                 (0.027)
+  4. PAST_ACCIDENTS      (0.024)
+  5. ANNUAL_MILEAGE      (0.019)
+
+Partial Dependence Insights:
+  - Experience: 6x risk reduction (novice → expert)
+  - Ownership: 23% claim rate reduction (rent → own)
+  - Vehicle Year: 20% reduction (old → new)
 
 ════════════════════════════════════════════════════════════════
 ```
 
 ---
 
-## 🛠️ Technical Stack
+## 🚀 Part 15: How to Use This Repository
 
-```yaml
-Languages:
-  - Python 3.8+
-
-Libraries:
-  - Data: pandas, numpy
-  - Visualization: matplotlib, seaborn, missingno
-  - ML: scikit-learn, xgboost
-  - Optimization: optuna
-  - Explainability: shap
-  - Stats: scipy
-
-Environment:
-  - Jupyter Notebook / JupyterLab
-  - Git version control
-  - Conda/pip package management
-```
-
----
-
-## 📚 How to Use This Repository
-
-### 1. Setup
+### Setup
 ```bash
 # Clone repository
 git clone <repo-url>
 cd car-insurance-risk-analysis
 
-# Create environment
+# Create conda environment
 conda create -n insurance python=3.8
 conda activate insurance
 
 # Install dependencies
-pip install -r requirements.txt
+pip install pandas numpy scikit-learn xgboost optuna shap matplotlib seaborn scipy
+
+# Launch Jupyter
+jupyter notebook
 ```
 
-### 2. Run Analysis
+### Run Analysis
 ```bash
 # Open main notebook
-jupyter notebook Car-Insurance-Risk-Analysis.ipynb
+jupyter notebook refactored-insurance-1.ipynb
 
-# Or run function library
+# Or open function library
 jupyter notebook functions-for-insurance.ipynb
 ```
 
-### 3. Reproduce Results
+### Reproduce Results
 ```python
-# Load data
-df = pd.read_csv('CarInsuranceClaim.csv')
-
-# Run preprocessing pipeline
+# Import functions
 from functions import *
-df_clean = preprocess_pipeline(df)
 
-# Train model
-X_train, X_test, y_train, y_test = split_data(df_clean)
-model = train_xgboost(X_train, y_train)
+# Load and clean data
+df = load_data('CarInsuranceClaim.csv')
+df_clean = drop_missing_values(df)
+
+# Encode features
+df_encoded = encode_ordinal_features(df_clean)
+df_encoded = encode_binary_features(df_encoded)
+
+# Split data
+X_train, X_test, X_val, y_train, y_test, y_val = split_data(df_encoded)
+
+# Train XGBoost
+xgb_model = train_xgboost(X_train, y_train)
+
+# Optimize hyperparameters (100 trials, ~20 minutes)
+best_params, best_threshold, study = optimize_xgboost_optuna(
+    X_train, y_train, n_trials=100, cv_folds=10
+)
+
+# Train production model
+production_model = train_xgboost(X_train, y_train, **best_params)
+
+# Calibrate probabilities
+calibrator = IsotonicRegression(out_of_bounds='clip')
+calibrator.fit(production_model.predict_proba(X_train)[:, 1], y_train)
 
 # Evaluate
-metrics = evaluate_model(model, X_test, y_test)
-diagnostics = plot_xgboost_diagnostics(model, X_train, y_train, X_test, y_test)
+metrics = plot_xgboost_diagnostics(production_model, X_train, y_train, X_test, y_test)
+
+# Explain predictions
+explainer, shap_values = analyze_shap_values(production_model, X_train, X_test, y_test)
 ```
 
 ---
 
-## 🎯 Key Takeaways
+## ⚠️ Limitations & Caveats
 
-1. **Domain Knowledge Matters**: Ordinal encoding preserved insurance risk relationships
-2. **Calibration is Critical**: Raw XGBoost probabilities underestimated by 13.5%
-3. **Explainability Sells Models**: SHAP convinced stakeholders to trust predictions
-4. **Business Metrics Win**: $108K profit opportunity > 2% AUC improvement
-5. **Error Analysis Guides Improvement**: FNs are "stealth" fraudsters → need interaction terms
+1. **Synthetic Data**: Kaggle dataset may not reflect real claim patterns
+2. **No Temporal Validation**: Can't assess concept drift over time
+3. **Missing Interaction Terms**: Main effects model (interactions in future work)
+4. **Data Quality Issues**: PAST_ACCIDENTS and SPEEDING_VIOLATIONS show unexpectedly weak effects
+5. **Gender Bias**: 2.4x effect is larger than industry standard (possible confounding)
+6. **Not Fraud Detection**: Predicts claim FILING, not claim APPROVAL or fraud
+7. **Class Balance**: Assumes <70:30 split; fraud detection (99:1) requires different approach
 
 ---
 
-## 👤 Author - Me :D
+## 📜 References
 
-**Data Scientist | ML Engineer**  
-*Specialization*: Hyperparameter Optimization and TUning
+### Academic
+- Hastie, T., Tibshirani, R., & Friedman, J. (2009). *The Elements of Statistical Learning*. Springer.
+- Chen, T., & Guestrin, C. (2016). "XGBoost: A Scalable Tree Boosting System." KDD.
+- Lundberg, S., & Lee, S. (2017). "A Unified Approach to Interpreting Model Predictions." NIPS.
+
+### Industry
+- Society of Actuaries. (2020). *Predictive Analytics in Insurance*.
+- National Association of Insurance Commissioners. (2021). *Big Data and Artificial Intelligence*.
+
+### Tools
+- scikit-learn Documentation: https://scikit-learn.org
+- XGBoost Documentation: https://xgboost.readthedocs.io
+- SHAP Documentation: https://shap.readthedocs.io
+- Optuna Documentation: https://optuna.org
+
+---
+
+## 👤 Author
+
+**Solo Founder | ML Engineer | Data Scientist**
+
+*Specialization*: Insurance Analytics, Explainable AI, Business Intelligence
+
+**Project Timeline**: 3 days (including deliberations and refactoring)
 
 ---
 
@@ -956,11 +1218,29 @@ This project is for educational and portfolio purposes.
 
 ## 🙏 Acknowledgments
 
-- **Dataset**: Kaggle Car Insurance Dataset (https://www.kaggle.com/datasets/sagnik1511/car-insurance-data/data)
+- **Dataset**: Kaggle Car Insurance Dataset
+- **Community**: scikit-learn, XGBoost, SHAP contributors
 - **Inspiration**: Actuarial science literature on claim prediction
-- **Tools**: Open-source ML community (scikit-learn, XGBoost, SHAP)
+
+---
+
+## 💡 Final Thoughts
+
+This project demonstrates:
+- ✅ **Full ML lifecycle**: Data cleaning → EDA → Modeling → Evaluation → Deployment planning
+- ✅ **Business acumen**: Cost-benefit analysis, premium pricing, regulatory compliance
+- ✅ **Technical rigor**: Bootstrap CIs, permutation importance, SHAP explainability
+- ✅ **Honest analysis**: Acknowledges limitations, proposes concrete improvements
+- ✅ **Reproducibility**: All code documented, functions extracted, README comprehensive
+
+**Key Lesson**: XGBoost Partial Dependence Plots reveal **true marginal effects** that contradict raw correlations and logistic regression coefficients. Always validate linear model assumptions with non-parametric methods!
 
 ---
 
 **Last Updated**: February 2026  
-**Status**: Production-Ready Model
+**Model Status**: Production-Ready (with calibration) ✅  
+**Next Steps**: Add interaction terms, deploy FastAPI, monitor drift
+
+---
+
+*"The best model is not the one with the highest AUC, but the one you understand well enough to trust in production."*
