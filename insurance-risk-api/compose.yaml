@@ -1,0 +1,14 @@
+version: "3.9"
+
+services:
+  api:
+    build: .
+    image: insurance-api:1.0
+    container_name: insurance-api-container
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./model:/insurance-api/model
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
